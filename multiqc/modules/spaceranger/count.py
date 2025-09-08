@@ -53,7 +53,8 @@ def parse_count_html(module: BaseMultiqcModule):
             if line.startswith("const data"):
                 line = line.replace("const data = ", "")
                 summary = json.loads(line)
-                summary = summary["summary"]
+                if 'summary' in summary.keys():
+                    summary = summary["summary"]
                 break
 
         if summary is None:
@@ -64,35 +65,64 @@ def parse_count_html(module: BaseMultiqcModule):
         if sample_name in general_stats_data:
             log.debug(f"Duplicate sample name found in {f['fn']}! Overwriting: {sample_name}")
 
-        software = next(
-            iter(x[1] for x in summary["summary_tab"]["pipeline_info_table"]["rows"] if x[0] == "Pipeline Version")
-        )
+        if 'summary_tab' in summary.keys():
+            software = next(
+                iter(x[1] for x in summary["summary_tab"]["pipeline_info_table"]["rows"] if x[0] == "Pipeline Version")
+            )
+
+        if 'tabs' in summary.keys():
+            software = next(
+                iter(x[1] for x in summary['tabs']['tab_data'][0]['run_summary']['card']['inner']['rows'] if x[0] == "Pipeline Version")
+            )
+    
         software_name, software_version = software.split("-")
         module.add_software_version(version=software_version, sample=sample_name, software_name=software_name)
 
         # List of data collated from different tables in cellranger reports.
         # This is a list of Tuples (metric name, value)
-        data_rows = (
-            [["Number of Spots Under Tissue", summary["summary_tab"]["filtered_bcs_transcriptome_union"]["metric"]]]
-            + summary["summary_tab"]["cells"]["table"]["rows"]
-            + summary["summary_tab"]["sequencing"]["table"]["rows"]
-            + summary["summary_tab"]["mapping"]["table"]["rows"]
-        )
-        # This is only contained in spaceranger reports for analyses with probe sets
-        try:
-            data_rows.extend(summary["analysis_tab"]["gdna"]["gems"]["table"]["rows"])
-        except KeyError as e:
-            fname = os.path.join(f["root"], f["fn"])
-            log.debug(
-                f"Could not parse the expected DNA table in the spaceranger report: {fname}: '{e}' field is missing"
+
+        if 'summary_tab' in summary.keys():
+
+            data_rows = (
+                [["Number of Spots Under Tissue", summary["summary_tab"]["filtered_bcs_transcriptome_union"]["metric"]]]
+                + summary["summary_tab"]["cells"]["table"]["rows"]
+                + summary["summary_tab"]["sequencing"]["table"]["rows"]
+                + summary["summary_tab"]["mapping"]["table"]["rows"]
             )
+            # This is only contained in spaceranger reports for analyses with probe sets
+            try:
+                data_rows.extend(summary["analysis_tab"]["gdna"]["gems"]["table"]["rows"])
+            except KeyError as e:
+                fname = os.path.join(f["root"], f["fn"])
+                log.debug(
+                    f"Could not parse the expected DNA table in the spaceranger report: {fname}: '{e}' field is missing"
+                )
+
+        if 'tabs' in summary.keys():
+            software = next(
+                iter(x[1] for x in summary['tabs']['tab_data'][0]['run_summary']['card']['inner']['rows'] if x[0] == "Pipeline Version")
+            )
+
+            data_rows = (
+                    [["Number of Spots Under Tissue", summary['tabs']['tab_data'][2]['bin_metrics']['card']['inner']['rows'][1][1]]] 
+                    + summary['tabs']['tab_data'][3]['segmentation_metrics_table']['card']['inner']['rows']
+                    + [summary['tabs']['tab_data'][2]['bin_metrics']['card']['inner']['rows'][1][:2]] + [summary['tabs']['tab_data'][2]['bin_metrics']['card']['inner']['rows'][1][:2]] + [summary['tabs']['tab_data'][2]['bin_metrics']['card']['inner']['rows'][1][:2]]
+                )
+                # This is only contained in spaceranger reports for analyses with probe sets
+            try:
+                data_rows.extend(summary["analysis_tab"]["gdna"]["gems"]["table"]["rows"])
+            except KeyError as e:
+                fname = os.path.join(f["root"], f["fn"])
+                log.debug(
+                    f"Could not parse the expected DNA table in the spaceranger report: {fname}: '{e}' field is missing"
+                    )
 
         general_stats_data[sample_name] = populate_data_and_headers(
             headers_to_update=general_stats_headers,
             new_data=data_rows,
             new_headers={
                 "Number of Spots Under Tissue": "spots under tissue",
-                "Mean Reads per Spot": "avg reads/spot",
+                "Mean Reads per Cell": "avg reads/spot",
                 "Fraction Reads in Spots Under Tissue": "reads in spots",
                 "Number of Reads": "reads",
                 "Valid Barcodes": "valid bc",
@@ -120,11 +150,11 @@ def parse_count_html(module: BaseMultiqcModule):
             new_headers={
                 "Number of Reads": "reads",
                 "Number of Spots Under Tissue": "spots under tissue",
-                "Mean Reads per Spot": "avg reads/spot",
+                "Mean Reads per Cell": "avg reads/spot",
                 "Fraction Reads in Spots Under Tissue": "reads in spots",
                 "Genes Detected": "genes detected",
-                "Median Genes per Spot": "median genes/spot",
-                "Median UMI Counts per Spot": "median umi/spot",
+                "Median Genes per Cell": "median genes/spot",
+                "Median UMIs per Cell": "median umi/spot",
                 "Valid Barcodes": "valid bc",
                 "Valid UMIs": "valid umi",
                 "Sequencing Saturation": "saturation",
